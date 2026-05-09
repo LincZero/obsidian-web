@@ -68,6 +68,10 @@ This is a live demo of **obsidian-web**, an open-source project that runs Obsidi
 
 > **Note:** this is a shared demo vault. Your edits are visible to others and reset every ${RESET_HOURS} hours. Core demo files cannot be deleted, but you can create and delete your own notes freely.
 
+---
+
+**[GitHub](https://github.com/MusiCode1/obsidian-web)** | Built by [MusiCode1](https://github.com/MusiCode1) and [Claude Code](https://claude.ai/code)
+
 #demo #welcome
 `],
 

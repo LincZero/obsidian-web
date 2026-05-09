@@ -162,3 +162,7 @@ The Node.js server (`server/`) can be deployed to any Linux box. A typical setup
 - The current starter folder picker is prompt-based: enter an absolute server path.
 - Do not bind the server to a public IP without a tunnel or auth layer in front.
 - Current architecture and roadmap are in `PLAN.md`.
+
+## Credits
+
+Built by [MusiCode1](https://github.com/MusiCode1) and [Claude Code](https://claude.ai/code).
