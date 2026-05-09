@@ -68,6 +68,15 @@ const serverCache = new Map();
 // one waits on the same promise instead of starting a duplicate full scan.
 const pendingBuilds = new Map();
 
+// ── Build progress (for /api/bootstrap/status polling) ───────────────────────
+// key = vaultId → { state, label, dirs, totalDirs, files, done, total, pct }
+const buildProgress = new Map();
+
+function setProgress(vaultId, update) {
+  const current = buildProgress.get(vaultId) || {};
+  buildProgress.set(vaultId, { ...current, ...update });
+}
+
 /** Compress a Buffer with both brotli and gzip concurrently. */
 function preCompress(buf) {
   return Promise.all([
@@ -121,7 +130,7 @@ function isTextFile(filename, size) {
  * Binary files are NOT put in fsCache here.  The client shim will populate
  * fsCache lazily when it serves a readdir answer from dirsCache.
  */
-async function walkDir(dir, root, fsCache, dirsCache, walkHidden = false) {
+async function walkDir(dir, root, fsCache, dirsCache, walkHidden = false, progress = null) {
   let entries;
   try { entries = await fsp.readdir(dir, { withFileTypes: true }); }
   catch (_) { return; }
@@ -159,6 +168,11 @@ async function walkDir(dir, root, fsCache, dirsCache, walkHidden = false) {
   // readdir and to lazily populate fs stat cache for each entry).
   dirsCache[relDir] = entryStats.filter(Boolean);
 
+  if (progress) {
+    progress.dirs = (progress.dirs || 0) + 1;
+    progress.cb();
+  }
+
   // Collect text files to read in this batch.
   const textFiles = [];
 
@@ -170,7 +184,7 @@ async function walkDir(dir, root, fsCache, dirsCache, walkHidden = false) {
     if (e.isDirectory) {
       // Put directory stat in fs cache so stat(dir) works.
       fsCache[rel] = { mtime: e.mtime, size: e.size, isFile: false, isDirectory: true };
-      await walkDir(abs, root, fsCache, dirsCache, walkHidden);
+      await walkDir(abs, root, fsCache, dirsCache, walkHidden, progress);
     } else if (isTextFile(e.name, e.size)) {
       // Text file within size limit: stat now, content added after batch read.
       fsCache[rel] = { mtime: e.mtime, size: e.size, isFile: true };
@@ -189,6 +203,10 @@ async function walkDir(dir, root, fsCache, dirsCache, walkHidden = false) {
         fsCache[rel] = { ...fsCache[rel], content };
       } catch (_) {}
     }));
+    if (progress) {
+      progress.filesRead = (progress.filesRead || 0) + batch.length;
+      progress.cb();
+    }
   }
 }
 
@@ -269,13 +287,30 @@ async function _buildCacheEntry(vaultId, vaultRoot, vaultRegistry, full = false)
     console.log(`[bootstrap] vault=${vaultId.slice(0, 8)}… cache MISS (${changedDirs.length} dirs changed): ${changedDirs.slice(0, 5).join(', ')}`);
   }
 
+  // ── Progress tracking ───────────────────────────────────────────
+  const progress = {
+    dirs: 0, filesRead: 0,
+    cb() {
+      const files = Object.keys(fsCache).filter(k => fsCache[k].isFile !== false).length;
+      setProgress(vaultId, {
+        state: 'scanning',
+        label: 'Scanning vault...',
+        dirs: this.dirs,
+        files,
+        filesRead: this.filesRead,
+        total: files,
+      });
+    },
+  };
+  setProgress(vaultId, { state: 'scanning', label: 'Scanning vault...', dirs: 0, files: 0, filesRead: 0, pct: 0 });
+
   // ── FS + dirs walk ────────────────────────────────────────────────
   const fsCache = {};
   const dirsCache = {};
 
   // Always: walk .obsidian/ fully (plugins, themes, snippets…).
   const obsidianDir = path.join(vaultRoot, '.obsidian');
-  try { await walkDir(obsidianDir, vaultRoot, fsCache, dirsCache, true); } catch (_) {}
+  try { await walkDir(obsidianDir, vaultRoot, fsCache, dirsCache, true, progress); } catch (_) {}
 
   // Vault root listing.
   try {
@@ -315,9 +350,11 @@ async function _buildCacheEntry(vaultId, vaultRoot, vaultRegistry, full = false)
   // (dirsCache['']) built above will be overwritten with identical data —
   // that's fine; we avoid duplicating the walk logic.
   if (full) {
-    await walkDir(vaultRoot, vaultRoot, fsCache, dirsCache, false);
+    setProgress(vaultId, { state: 'scanning', label: 'Scanning vault (full)...' });
+    await walkDir(vaultRoot, vaultRoot, fsCache, dirsCache, false, progress);
   }
 
+  setProgress(vaultId, { state: 'reading', label: 'Reading files...', pct: 80 });
   const fileCount = Object.keys(fsCache).length;
   const dirCount = Object.keys(dirsCache).length;
   const withContent = Object.values(fsCache).filter(v => v.content !== undefined).length;
@@ -345,12 +382,16 @@ async function _buildCacheEntry(vaultId, vaultRoot, vaultRegistry, full = false)
 
   // Pre-compress once. Subsequent HIT requests send the buffer directly,
   // skipping JSON.stringify + zlib (~800ms → <5ms).
+  setProgress(vaultId, { state: 'compressing', label: 'Compressing...', pct: 90 });
   const jsonBuf = Buffer.from(JSON.stringify(response));
   let compressed = {};
   try { compressed = await preCompress(jsonBuf); } catch (_) {}
 
   const entry = { response, dirMtimes, compressed, isFull: full };
   if (vaultId) serverCache.set(vaultId, entry);
+  setProgress(vaultId, { state: 'ready', label: 'Ready', pct: 100 });
+  // Clean up progress after a short delay so late pollers see "ready".
+  setTimeout(() => buildProgress.delete(vaultId), 5000);
 
   const ms = Date.now() - t0;
   console.log(
@@ -366,6 +407,16 @@ async function _buildCacheEntry(vaultId, vaultRoot, vaultRegistry, full = false)
 
 function createBootstrapRouter(vaultRegistry, fallbackVaultRoot) {
   const router = express.Router();
+
+  // Lightweight status endpoint for progress polling.
+  router.get('/status', (req, res) => {
+    const vaultId = req.query.vault || '';
+    const progress = buildProgress.get(vaultId);
+    if (!progress) {
+      return res.json({ state: 'idle', label: '' });
+    }
+    res.json(progress);
+  });
 
   router.get('/', async (req, res) => {
     const vaultId = req.query.vault || '';

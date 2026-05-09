@@ -20,6 +20,75 @@ function invalidateBootstrapCache(vaultId) {
   } catch (_) {}
 }
 
+// ── Write coalescing for rapid writes ──────────────────────────────────────
+// On slow filesystems (rclone FUSE) rapid writes to the same file pile up
+// and choke the mount.  This mechanism detects per-file write frequency:
+//
+//   First write to a file   → immediate (no delay)
+//   Second write within N ms → buffered; timer reset
+//   After N ms of quiet     → flush to disk
+//
+// Normal note saves go straight to disk.  Rapid-fire config writes
+// (workspace.json written 20x/min) coalesce into a single disk write.
+
+const COALESCE_WINDOW_MS = 5000; // writes within this window are coalesced
+
+// key = absolute path → { data, encoding, timer, mtime }
+const pendingWrites = new Map();
+// key = absolute path → timestamp of last completed write
+const lastWriteTime = new Map();
+
+function shouldCoalesce(absPath) {
+  const last = lastWriteTime.get(absPath);
+  return last && (Date.now() - last) < COALESCE_WINDOW_MS;
+}
+
+function scheduleFlush(absPath) {
+  const entry = pendingWrites.get(absPath);
+  if (!entry) return;
+  if (entry.timer) clearTimeout(entry.timer);
+  entry.timer = setTimeout(async () => {
+    const pending = pendingWrites.get(absPath);
+    if (!pending) return;
+    pendingWrites.delete(absPath);
+    try {
+      await fsp.writeFile(absPath, pending.data, pending.encoding ? { encoding: pending.encoding } : undefined);
+      lastWriteTime.set(absPath, Date.now());
+    } catch (err) {
+      console.error('[write-coalesce] flush failed:', absPath, err.message);
+    }
+  }, COALESCE_WINDOW_MS);
+}
+
+function getPendingContent(absPath) {
+  return pendingWrites.get(absPath) || null;
+}
+
+// Flush all pending writes on shutdown (async with timeout so slow
+// filesystems like rclone don't hang the process indefinitely).
+async function flushAllPending() {
+  const entries = [...pendingWrites.entries()];
+  pendingWrites.clear();
+  if (entries.length === 0) return;
+  console.log('[write-coalesce] flushing', entries.length, 'pending writes...');
+  const FLUSH_TIMEOUT = 10000;
+  const writes = entries.map(([absPath, entry]) => {
+    if (entry.timer) clearTimeout(entry.timer);
+    return fsp.writeFile(absPath, entry.data, entry.encoding ? { encoding: entry.encoding } : undefined)
+      .catch(err => console.error('[write-coalesce] flush failed:', absPath, err.message));
+  });
+  await Promise.race([
+    Promise.all(writes),
+    new Promise(resolve => setTimeout(() => {
+      console.warn('[write-coalesce] flush timeout — some writes may be lost');
+      resolve();
+    }, FLUSH_TIMEOUT)),
+  ]);
+}
+
+process.on('SIGTERM', () => flushAllPending().finally(() => process.exit(0)));
+process.on('SIGINT', () => flushAllPending().finally(() => process.exit(0)));
+
 function createFsRouter(vaultRegistry, fallbackVaultRoot) {
   const router = express.Router();
 
@@ -87,7 +156,13 @@ function createFsRouter(vaultRegistry, fallbackVaultRoot) {
   router.get('/stat', async (req, res) => {
     try {
       const target = resolveSafe(req, req.query.path || '');
+      const pending = getPendingContent(target);
       const stats = await fsp.stat(target);
+      // If there's a pending write, override mtime so the client sees fresh data.
+      if (pending) {
+        stats.mtime = new Date(pending.mtime);
+        stats.mtimeMs = pending.mtime;
+      }
       res.json(serializeStats(stats));
     } catch (err) {
       handleError(res, err);
@@ -132,6 +207,16 @@ function createFsRouter(vaultRegistry, fallbackVaultRoot) {
     try {
       const target = resolveSafe(req, req.query.path || '');
       const encoding = req.query.encoding || null;
+      // Serve from debounce buffer if a write is pending.
+      const pending = getPendingContent(target);
+      if (pending) {
+        if (encoding) {
+          res.type('text/plain; charset=utf-8').send(typeof pending.data === 'string' ? pending.data : pending.data.toString(encoding));
+        } else {
+          res.type('application/octet-stream').send(pending.data);
+        }
+        return;
+      }
       if (encoding) {
         const data = await fsp.readFile(target, encoding);
         res.type('text/plain; charset=utf-8').send(data);
@@ -148,11 +233,23 @@ function createFsRouter(vaultRegistry, fallbackVaultRoot) {
   // ?encoding=utf8 means the server treats body as utf-8 text.
   router.put('/write', express.raw({ type: '*/*', limit: '256mb' }), async (req, res) => {
     try {
-      const target = resolveSafe(req, req.query.path || '');
+      const relPath = req.query.path || '';
+      const target = resolveSafe(req, relPath);
       const encoding = req.query.encoding || null;
       const data = encoding ? req.body.toString(encoding) : req.body;
       await fsp.mkdir(path.dirname(target), { recursive: true });
+
+      // If this file was written recently, coalesce instead of hitting disk.
+      if (shouldCoalesce(target)) {
+        pendingWrites.set(target, { data, encoding, timer: null, mtime: Date.now() });
+        scheduleFlush(target);
+        invalidateBootstrapCache(req.query.vault);
+        res.json({ ok: true });
+        return;
+      }
+
       await fsp.writeFile(target, data, encoding ? { encoding } : undefined);
+      lastWriteTime.set(target, Date.now());
       invalidateBootstrapCache(req.query.vault);
       res.json({ ok: true });
     } catch (err) {
