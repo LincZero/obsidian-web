@@ -108,6 +108,10 @@ In this deployment, instead of a Node.js server, all the backend runs on **Cloud
 | **WebSocket** | Pushes real-time file change events to all connected tabs |
 | **Alarm** | Resets the vault to its template every ${RESET_HOURS} hours |
 
+## Fast bootstrap
+
+The browser version can actually load faster than the desktop app! Instead of Obsidian reading dozens of config files one by one from disk, we serve everything in a single HTTP request (\`/api/bootstrap\`) — all files, directories, and metadata arrive at once, before Obsidian even starts running. When it calls \`statSync\` or \`readFileSync\`, the answer is already waiting in memory.
+
 ## The shim approach
 
 When Obsidian calls \`require('fs')\`, our \`boot.js\` intercepts it and returns our HTTP-based \`original-fs.js\` shim. When Obsidian calls \`ipcRenderer.sendSync('vault')\`, our \`electron.js\` shim returns pre-cached values from the bootstrap payload. No Electron process is needed.

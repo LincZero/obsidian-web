@@ -16,6 +16,10 @@ obsidian-web loads Obsidian's original renderer (`app.js`) completely unmodified
 - Real-time sync across tabs via WebSocket
 - RTL / Unicode support
 
+### Fast bootstrap
+
+The browser version can load faster than the desktop app. Instead of Obsidian reading dozens of config files one by one from disk, everything is served in a single HTTP request (`/api/bootstrap`) — all files, directories, and metadata arrive at once, before Obsidian even starts running. When it calls `statSync` or `readFileSync`, the answer is already waiting in memory.
+
 ### Two deployment modes
 
 | | **Node.js server** | **Cloudflare Workers** |
