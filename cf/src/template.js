@@ -72,6 +72,9 @@ This is a live demo of **obsidian-web**, an open-source project that runs Obsidi
 
 **[GitHub](https://github.com/MusiCode1/obsidian-web)** | Built by [MusiCode1](https://github.com/MusiCode1) and [Claude Code](https://claude.ai/code)
 
+> [!important] Disclaimer
+> This is an educational proof-of-concept, not an official Obsidian product. Not affiliated with or endorsed by [Obsidian](https://obsidian.md) or Dynalist Inc.
+
 #demo #welcome
 `],
 

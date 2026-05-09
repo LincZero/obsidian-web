@@ -163,6 +163,14 @@ The Node.js server (`server/`) can be deployed to any Linux box. A typical setup
 - Do not bind the server to a public IP without a tunnel or auth layer in front.
 - Current architecture and roadmap are in `PLAN.md`.
 
+## Disclaimer
+
+This is an **educational proof-of-concept** exploring how Electron-based apps can run in a standard browser. It is not affiliated with, endorsed by, or associated with [Obsidian](https://obsidian.md) or Dynalist Inc.
+
+This repository does **not** include Obsidian's source code. The `obsidian/` directory is gitignored — users must download Obsidian's renderer themselves using the provided setup script. Obsidian's code remains the property of Dynalist Inc. under their [Terms of Service](https://obsidian.md/terms).
+
+If the Obsidian team has any concerns about this project, please [open an issue](https://github.com/MusiCode1/obsidian-web/issues) and we will address them promptly.
+
 ## Credits
 
 Built by [MusiCode1](https://github.com/MusiCode1) and [Claude Code](https://claude.ai/code).
