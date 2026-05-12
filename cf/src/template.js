@@ -10,6 +10,7 @@
  */
 
 import { PLUGIN_FILES } from './plugins-generated.js';
+import { DOCS_FILES } from './docs-generated.js';
 
 const RESET_HOURS = 4;
 
@@ -334,54 +335,7 @@ for (const [path, content] of PLUGIN_FILES) {
   TEMPLATE_FILES.set(path, content);
 }
 
-// #region FS API handlers
-
-const fs = require('fs');
-const path = require('path');
-
-const docsDir = path.join(__dirname, '../docs');
-
-const imageExtensions = new Set([
-  '.png', '.jpg', '.jpeg', '.gif', 
-  '.svg', '.webp', '.ico', '.bmp'
-]);
-
-/**
- * 深度遍历目录并读取文件
- * @param {string} currentDir - 当前遍历的目录路径
- */
-function traverseAndLoad(currentDir) {
-  if (!fs.existsSync(currentDir)) {
-    console.warn(`Directory does not exist: ${currentDir}`);
-    return;
-  }
-
-  // 读取目录内容，withFileTypes 可以帮助我们判断是文件还是文件夹
-  const entries = fs.readdirSync(currentDir, { withFileTypes: true });
-
-  for (const entry of entries) {
-    const fullPath = path.join(currentDir, entry.name);
-    // 将路径转换为相对 docsDir 的路径作为 Map 的 key（比如 "guide/intro.md"）
-    const relativePath = path.relative(docsDir, fullPath).replace(/\\/g, '/'); // 兼容 Windows 路径
-
-    if (entry.isDirectory()) { // 目录，递归遍历
-      traverseAndLoad(fullPath);
-    } else if (entry.isFile()) { // 文件
-      // 扩展名检查、图片检查
-      const ext = path.extname(entry.name).toLowerCase();
-      const isImage = imageExtensions.has(ext);
-      // if (isImage) continue;
-
-      // 读取文件内容
-      // 如果是图片且被允许读取，读取为 Buffer 二进制数据；否则读取为 utf8 文本
-      const content = fs.readFileSync(fullPath, isImage ? null : 'utf8');
-      
-      TEMPLATE_FILES.set(relativePath, content);
-    }
-  }
+// Merge auto-generated doc files into the template.
+for (const [path, content] of DOCS_FILES) {
+  TEMPLATE_FILES.set(path, content);
 }
-traverseAndLoad(docsDir);
-
-console.log(`\nRead ${TEMPLATE_FILES.size} files.`);
-
-// #endregion
