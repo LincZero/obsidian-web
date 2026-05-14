@@ -124,28 +124,18 @@ HEADER
 
 if [[ -d "$DOCS_DIR" ]]; then
   first=true
-  # 扩充支持的文件格式：md, txt, json, js, css, svg 以及图片格式 png, jpg, jpeg
-  find "$DOCS_DIR" -type f \( -name "*.md" -o -name "*.txt" -o -name "*.json" -o -name "*.js" -o -name "*.css" -o -name "*.svg" -o -name "*.png" -o -name "*.jpg" -o -name "*.jpeg" \) | sort | while read -r file; do
+  # 默认读取 markdown 或其他文本文件，可根据需要调整后缀
+  find "$DOCS_DIR" -type f \( -name "*.md" -o -name "*.txt" \) | sort | while read -r file; do
     rel="${file#$DOCS_DIR/}"
-
-    # 判断是否为二进制图片文件
-    if [[ "$file" == *.png || "$file" == *.jpg || "$file" == *.jpeg ]]; then
-      # 图片使用 base64 编码 (兼容 Mac 和 Linux 的 base64 命令)
-      b64=$(base64 -w 0 "$file" 2>/dev/null || base64 "$file")
-      content_str="\`${b64}\`"
-    else
-      # 文本文件，转义供 JS 模板字符串使用
-      content=$(sed 's/\\/\\\\/g; s/`/\\`/g; s/\${/\\${/g' "$file")
-      content_str="\`${content}\`"
-    fi
-
+    # 处理文件内容，转义供 JS 模板字符串使用
+    content=$(sed 's/\\/\\\\/g; s/`/\\`/g; s/\${/\\${/g' "$file")
     if [ "$first" = true ]; then
       first=false
     else
       echo "," >> "$DOCS_OUT"
     fi
-    # 路径使用 python 转义成安全 JSON 字符串，内容已处理
-    printf "  [%s, %s]" "$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" "$content_str" >> "$DOCS_OUT"
+    # 路径使用 python 转义成安全 JSON 字符串，内容使用反引号包裹
+    printf "  [%s, %s]" "$(printf '%s' "$rel" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" '`'"$content"'`' >> "$DOCS_OUT"
   done
 fi
 
