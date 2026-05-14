@@ -10,7 +10,7 @@
  */
 
 import { PLUGIN_FILES } from './plugins-generated.js';
-import { DOCS_FILES } from './docs-generated.js';
+import { DOCS_FILES } from './docs-generated.js'; // [!code ++]
 
 const RESET_HOURS = 4;
 
@@ -330,19 +330,26 @@ FROM "Features/Dataview Queries"
 
 ]);
 
-// Remove some files (no starting with .obsidian/)
+// Remove some files (no starting with .obsidian/) // [!code ++]
 for (const path of TEMPLATE_FILES.keys()) {
   if (!path.startsWith('.obsidian/')) {
     TEMPLATE_FILES.delete(path);
   }
 }
 
+// Default enable my plugins // [!code ++]
+TEMPLATE_FILES.set('.obsidian/community-plugins.json', JSON.stringify([
+  'dataview',
+  'templater-obsidian',
+  'obsidian-any-block',
+]));
+
 // Merge auto-generated plugin files into the template.
 for (const [path, content] of PLUGIN_FILES) {
   TEMPLATE_FILES.set(path, content);
 }
 
-// Merge auto-generated doc files into the template.
+// Merge auto-generated doc files into the template. // [!code ++]
 for (const [path, content] of DOCS_FILES) {
   TEMPLATE_FILES.set(path, content);
 }
