@@ -330,6 +330,13 @@ FROM "Features/Dataview Queries"
 
 ]);
 
+// Remove some files (no starting with .obsidian/)
+for (const path of TEMPLATE_FILES.keys()) {
+  if (!path.startsWith('.obsidian/')) {
+    TEMPLATE_FILES.delete(path);
+  }
+}
+
 // Merge auto-generated plugin files into the template.
 for (const [path, content] of PLUGIN_FILES) {
   TEMPLATE_FILES.set(path, content);
