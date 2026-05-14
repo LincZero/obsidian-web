@@ -341,6 +341,7 @@ for (const path of TEMPLATE_FILES.keys()) {
 TEMPLATE_FILES.set('.obsidian/community-plugins.json', JSON.stringify([
   'dataview',
   'templater-obsidian',
+  'any-block',
   'obsidian-any-block',
 ]));
 
