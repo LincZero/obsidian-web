@@ -38,8 +38,9 @@ export const TEMPLATE_FILES = new Map([
   ['.obsidian/core-plugins-migration.json', JSON.stringify({ 'file-explorer': true })],
 
   ['.obsidian/community-plugins.json', JSON.stringify([
-    'dataview',
-    'templater-obsidian',
+    // 'dataview',
+    // 'templater-obsidian',
+    'any-block'
   ])],
 
   // ── Notes ─────────────────────────────────────────────────────────────────
@@ -339,10 +340,7 @@ for (const path of TEMPLATE_FILES.keys()) {
 
 // Default enable my plugins // [!code ++]
 TEMPLATE_FILES.set('.obsidian/community-plugins.json', JSON.stringify([
-  'dataview',
-  'templater-obsidian',
-  'any-block',
-  'obsidian-any-block',
+  'any-block'
 ]));
 
 // Merge auto-generated plugin files into the template.
